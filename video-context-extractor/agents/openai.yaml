@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Context Extractor"
+  short_description: "Extract context from video files"
+  default_prompt: "Use $video-context-extractor to inspect this video and add the relevant visual context."
