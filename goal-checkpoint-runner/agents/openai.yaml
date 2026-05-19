@@ -1,0 +1,4 @@
+interface:
+  display_name: "Goal Checkpoint Runner"
+  short_description: "Run goal-mode work through checkpoints and review"
+  default_prompt: "Use $goal-checkpoint-runner to turn this plan into a checkpointed goal with a final acceptance review gate."
