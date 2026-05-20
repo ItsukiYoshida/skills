@@ -69,7 +69,7 @@ python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
   --goal-objective goal.md \
   --evidence evidence.md \
   --output review.out \
-  --timeout-sec 180
+  --timeout-sec 300
 ```
 
 The helper runs `claude -p` with structured JSON output, writes Claude's raw output, classifies it with `validate_review_acceptance.py`, and exits:
@@ -94,13 +94,28 @@ The helper defaults are intentionally review-scoped and OAuth compatible:
 - `--strict-mcp-config` without MCP config to avoid ambient MCP startup.
 - `--model opus --fallback-model sonnet` for consistent review quality.
 - `--permission-mode default` with read-only review tools and write tools denied.
-- `--max-budget-usd 2` and `--timeout-sec 180` to bound runaway reviews.
-- `--hermetic` is opt-in and maps to `claude --bare`; it requires `ANTHROPIC_API_KEY` or an `apiKeyHelper` setting because OAuth/keychain auth is disabled by Claude in bare mode.
+- `--max-budget-usd 2` and `--timeout-sec 300` to bound runaway reviews while leaving enough time for real file inspection.
+- `--hermetic` is opt-in and maps to `claude --bare`; it requires `ANTHROPIC_API_KEY` or an `apiKeyHelper` setting because OAuth/keychain auth is disabled by Claude in bare mode. The helper checks this before invoking Claude and returns `UNKNOWN` with `claude_auth_missing_for_hermetic` when auth is unavailable.
 
-Manual invocation should preserve the same shape:
+OAuth-compatible mode is intentionally less isolated than `--bare`. It avoids ambient MCP startup with `--strict-mcp-config`, but normal Claude settings, hooks, and CLAUDE.md context can still affect the subprocess. Use `--hermetic --settings '{"apiKeyHelper":"..."}'` or `ANTHROPIC_API_KEY` when full bare-mode isolation matters more than subscription/OAuth compatibility.
+
+Manual invocation should preserve the same shape. The example below is abbreviated; prefer the helper for the full `--add-dir`, dynamic-system-prompt exclusion, budget, fallback model, allowed-tool, and disallowed-tool defaults.
 
 ```bash
-claude -p --model opus --output-format json --json-schema '<status/findings schema>' --permission-mode default --strict-mcp-config --no-session-persistence < review-prompt.md
+claude -p \
+  --model opus \
+  --fallback-model sonnet \
+  --output-format json \
+  --json-schema '<status/findings schema>' \
+  --permission-mode default \
+  --strict-mcp-config \
+  --no-session-persistence \
+  --exclude-dynamic-system-prompt-sections \
+  --max-budget-usd 2 \
+  --add-dir "$(pwd)" \
+  --allowedTools Read Grep Glob 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git status:*)' \
+  --disallowedTools Edit Write MultiEdit NotebookEdit \
+  < review-prompt.md
 ```
 
 ## Classification Guidance

@@ -40,7 +40,7 @@ The default reviewer is Claude Code in non-interactive print mode. Use one revie
 
 Give Claude the checkpoint list, changed-file summary, verification evidence, and the required response contract from `references/review_gate.md`. Do not ask Claude to redo implementation.
 
-The helper keeps OAuth/subscription login compatible by default. It uses `--output-format json`, a JSON schema, model defaults, default permission mode, read-only review tools, strict MCP config, and a bounded budget. Use `--hermetic` only when `ANTHROPIC_API_KEY` or `apiKeyHelper` is available and the user explicitly wants `claude --bare` isolation.
+The helper keeps OAuth/subscription login compatible by default. It uses `--output-format json`, a JSON schema, model defaults, default permission mode, read-only review tools, strict MCP config, and a bounded budget. This mode is not fully hermetic: Claude may still read normal settings, hooks, and CLAUDE.md context that apply to the subprocess. Use `--hermetic` only when `ANTHROPIC_API_KEY` or `apiKeyHelper` is available and the user explicitly wants `claude --bare` isolation.
 
 Keep review inputs compact. Summarize broad diffs into checkpoint evidence and changed-file lists before invoking Claude; pass detailed files only when the review finding depends on them. The helper saves the exact prompt as `<review.out>.prompt.md` by default, so inspect that file when Claude times out or returns an ambiguous result.
 
