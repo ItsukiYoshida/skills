@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the default goal acceptance review with `claude -p`.
 
-This helper builds a stable review prompt from goal/checkpoint evidence, invokes
-Claude Code in print mode, writes the raw review output, then classifies the
-terminal review status. The prompt is materialized as a file and passed to
-Claude on stdin so large goal context does not appear in the process list.
+This helper builds a stable review prompt, materializes it as a file, invokes
+Claude Code in non-interactive print mode, writes the raw Claude output, then
+classifies the terminal review status. Reviewer failures are normalized to
+UNKNOWN/exit 2 so they cannot be mistaken for CHANGES_REQUESTED findings.
 """
 
 from __future__ import annotations
@@ -17,10 +17,46 @@ import time
 from pathlib import Path
 from typing import Any
 
+from validate_review_acceptance import classify as classify_review
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 DEFAULT_CONTRACT = SKILL_DIR / "references" / "review_gate.md"
+DEFAULT_ALLOWED_TOOLS = [
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git status:*)",
+]
+DEFAULT_DISALLOWED_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
+REVIEW_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "status": {"type": "string", "enum": ["ACCEPTED", "CHANGES_REQUESTED"]},
+        "summary": {"type": "string"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "checkpoint": {"type": "string"},
+                    "severity": {"type": "string"},
+                    "file": {"type": "string"},
+                    "line": {"type": "integer"},
+                    "problem": {"type": "string"},
+                    "required_fix": {"type": "string"},
+                },
+                "required": ["problem"],
+            },
+        },
+    },
+    "required": ["status", "findings"],
+}
 
 
 def _read_optional(path: str | None) -> str:
@@ -30,10 +66,23 @@ def _read_optional(path: str | None) -> str:
 
 
 def _classify(raw: str) -> dict[str, Any]:
-    sys.path.insert(0, str(SCRIPT_DIR))
-    from validate_review_acceptance import classify  # pylint: disable=import-error
+    return classify_review(raw)
 
-    return classify(raw)
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _unknown(
+    output_path: Path,
+    error: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    result = {"accepted": False, "status": "UNKNOWN", "error": error}
+    result.update(extra)
+    _write_json(output_path, result)
+    print(json.dumps(result, sort_keys=True))
+    return result
 
 
 def _build_prompt(args: argparse.Namespace) -> str:
@@ -62,8 +111,9 @@ def _build_prompt(args: argparse.Namespace) -> str:
         args.extra_context or "",
         "# Instruction",
         (
-            "Return exactly one terminal status: ACCEPTED if no required fixes "
-            "remain, otherwise CHANGES_REQUESTED with actionable findings."
+            "Return a JSON object matching the required schema. Use status "
+            "ACCEPTED only when no required fixes remain. Use status "
+            "CHANGES_REQUESTED with actionable findings when fixes are required."
         ),
     ]
     return "\n\n".join(section for section in sections if section != "")
@@ -71,6 +121,42 @@ def _build_prompt(args: argparse.Namespace) -> str:
 
 def _default_prompt_path(output_path: Path) -> Path:
     return output_path.with_name(output_path.name + ".prompt.md")
+
+
+def _append_repeated(command: list[str], flag: str, values: list[str]) -> None:
+    if values:
+        command.append(flag)
+        command.extend(values)
+
+
+def _build_command(args: argparse.Namespace, cwd: Path) -> list[str]:
+    command = [args.claude_bin, "-p"]
+    if args.hermetic:
+        command.append("--bare")
+    else:
+        command.append("--strict-mcp-config")
+
+    command.extend([
+        "--model",
+        args.model,
+        "--output-format",
+        "json",
+        "--json-schema",
+        json.dumps(REVIEW_SCHEMA, separators=(",", ":")),
+        "--permission-mode",
+        args.permission_mode,
+        "--no-session-persistence",
+        "--exclude-dynamic-system-prompt-sections",
+        "--add-dir",
+        str(cwd),
+    ])
+    if args.fallback_model:
+        command.extend(["--fallback-model", args.fallback_model])
+    if args.max_budget_usd:
+        command.extend(["--max-budget-usd", str(args.max_budget_usd)])
+    _append_repeated(command, "--allowedTools", args.allowed_tool)
+    _append_repeated(command, "--disallowedTools", args.disallowed_tool)
+    return command
 
 
 def main() -> int:
@@ -115,9 +201,41 @@ def main() -> int:
         help="Claude executable name or path.",
     )
     parser.add_argument(
+        "--model",
+        default="opus",
+        help="Claude model alias or full model name for review.",
+    )
+    parser.add_argument(
+        "--fallback-model",
+        default="sonnet",
+        help="Fallback model for claude -p overloads. Empty string disables it.",
+    )
+    parser.add_argument(
+        "--max-budget-usd",
+        default="2",
+        help="Maximum Claude API spend for one review. Empty string disables it.",
+    )
+    parser.add_argument(
         "--permission-mode",
+        default="default",
+        help="Claude permission mode for review. Default: default.",
+    )
+    parser.add_argument(
+        "--hermetic",
+        action="store_true",
+        help="Use claude --bare. This disables OAuth/keychain auth and requires ANTHROPIC_API_KEY or apiKeyHelper.",
+    )
+    parser.add_argument(
+        "--allowed-tool",
+        action="append",
         default=None,
-        help="Optional Claude permission mode, for example dontAsk.",
+        help="Allowed Claude tool. Repeat to replace the default read-only tool set.",
+    )
+    parser.add_argument(
+        "--disallowed-tool",
+        action="append",
+        default=None,
+        help="Disallowed Claude tool. Repeat to replace the default write-deny set.",
     )
     args = parser.parse_args()
     if not args.prompt_file and not args.goal_objective:
@@ -125,6 +243,9 @@ def main() -> int:
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    cwd = Path(args.cwd).resolve()
+    args.allowed_tool = args.allowed_tool or list(DEFAULT_ALLOWED_TOOLS)
+    args.disallowed_tool = args.disallowed_tool or list(DEFAULT_DISALLOWED_TOOLS)
 
     if args.prompt_file:
         prompt_output = Path(args.prompt_file)
@@ -136,59 +257,46 @@ def main() -> int:
 
     prompt_chars = len(prompt_output.read_text(encoding="utf-8"))
     if prompt_chars > args.max_prompt_chars:
-        result = {
-            "accepted": False,
-            "status": "UNKNOWN",
-            "error": "prompt_too_large",
-            "prompt_chars": prompt_chars,
-            "prompt_file": str(prompt_output),
-            "max_prompt_chars": args.max_prompt_chars,
-        }
-        output_path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
-        print(json.dumps(result, sort_keys=True))
+        _unknown(
+            output_path,
+            "prompt_too_large",
+            prompt_chars=prompt_chars,
+            prompt_file=str(prompt_output),
+            max_prompt_chars=args.max_prompt_chars,
+        )
         return 2
 
-    command = [
-        args.claude_bin,
-        "-p",
-        "--output-format",
-        "text",
-        "--no-session-persistence",
-    ]
-    if args.permission_mode:
-        command.extend(["--permission-mode", args.permission_mode])
+    command = _build_command(args, cwd)
 
     started = time.monotonic()
     try:
         with prompt_output.open("r", encoding="utf-8") as prompt_stdin:
             completed = subprocess.run(
                 command,
-                cwd=args.cwd,
+                cwd=cwd,
                 stdin=prompt_stdin,
                 check=False,
                 text=True,
                 capture_output=True,
                 timeout=args.timeout_sec,
             )
+    except FileNotFoundError:
+        _unknown(output_path, "claude_not_found", claude_bin=args.claude_bin)
+        return 2
     except subprocess.TimeoutExpired as exc:
         elapsed = round(time.monotonic() - started, 3)
-        result = {
-            "accepted": False,
-            "status": "UNKNOWN",
-            "error": "claude_timeout",
-            "elapsed_sec": elapsed,
-            "prompt_file": str(prompt_output),
-            "timeout_sec": args.timeout_sec,
-        }
-        output_path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
         if args.stderr_output:
             stderr_output = Path(args.stderr_output)
             stderr_output.parent.mkdir(parents=True, exist_ok=True)
             stderr_output.write_text(exc.stderr or "", encoding="utf-8")
-        print(json.dumps(result, sort_keys=True))
+        _unknown(
+            output_path,
+            "claude_timeout",
+            elapsed_sec=elapsed,
+            prompt_file=str(prompt_output),
+            timeout_sec=args.timeout_sec,
+        )
         return 2
-
-    output_path.write_text(completed.stdout, encoding="utf-8")
 
     if completed.stderr:
         sys.stderr.write(completed.stderr)
@@ -198,17 +306,17 @@ def main() -> int:
             stderr_output.write_text(completed.stderr, encoding="utf-8")
 
     if completed.returncode != 0:
-        if not completed.stdout:
-            result = {
-                "accepted": False,
-                "status": "UNKNOWN",
-                "error": "claude_failed_without_stdout",
-                "returncode": completed.returncode,
-            }
-            output_path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
-            print(json.dumps(result, sort_keys=True))
-        return completed.returncode
+        if completed.stdout:
+            output_path.write_text(completed.stdout, encoding="utf-8")
+        _unknown(
+            output_path,
+            "claude_failed",
+            returncode=completed.returncode,
+            prompt_file=str(prompt_output),
+        )
+        return 2
 
+    output_path.write_text(completed.stdout, encoding="utf-8")
     result = _classify(completed.stdout)
     print(json.dumps(result, sort_keys=True))
     if result["status"] == "UNKNOWN":

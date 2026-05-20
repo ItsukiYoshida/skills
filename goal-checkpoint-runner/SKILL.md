@@ -23,22 +23,24 @@ Use this skill to run long implementation work through Codex goal mode without a
 ## Review Gate Rules
 
 - Do not rely on built-in `/review` as a multi-agent gate unless the user explicitly asks for that exact review path. In Codex 0.131.0, goal persistence and built-in review are separate surfaces.
-- Default to `claude -p` for the acceptance review gate. Use `scripts/run_claude_review.py` so the prompt shape, timeout, output path, and acceptance classification stay consistent.
-- Treat `claude -p` timeout or empty output as an unavailable review gate, not as acceptance. Do not start fallback reviewers unless the user explicitly asks for a fallback path.
-- Require a clear terminal review status: `ACCEPTED` or `CHANGES_REQUESTED`.
+- Default to `claude -p` for the acceptance review gate. Use `scripts/run_claude_review.py` so the prompt shape, structured output schema, timeout, output path, and acceptance classification stay consistent.
+- Treat `claude -p` timeout, failure, empty output, or missing binary as an unavailable review gate, not as acceptance or actionable requested changes. Do not start fallback reviewers unless the user explicitly asks for a fallback path.
+- Require structured review output with `status: "ACCEPTED"` or `status: "CHANGES_REQUESTED"` and a `findings` array.
 - Use `scripts/validate_review_acceptance.py` when a deterministic local check is useful for review output from a file or stdin.
-- If a reviewer gives prose without a terminal status, classify it conservatively as `CHANGES_REQUESTED` unless the user confirms acceptance.
+- If a reviewer gives prose without structured status, classify it as `UNKNOWN`; do not treat it as accepted or as actionable requested changes.
 - Never mark the goal complete because token budget, time budget, or patience is exhausted.
 
 ## Claude Review Shape
 
-The default reviewer is Claude Code in print mode. Use one review prompt that explicitly asks Claude to act as three focused reviewers:
+The default reviewer is Claude Code in non-interactive print mode. Use one review prompt that explicitly asks Claude to act as three focused reviewers:
 
 - Implementation reviewer: checks behavior against the checkpoint plan and inspects likely code paths.
 - Verification reviewer: checks tests, commands, manual evidence, and missing coverage.
 - Scope reviewer: checks unintended changes, user constraints, compatibility/fallback policy, and dirty worktree boundaries.
 
 Give Claude the checkpoint list, changed-file summary, verification evidence, and the required response contract from `references/review_gate.md`. Do not ask Claude to redo implementation.
+
+The helper keeps OAuth/subscription login compatible by default. It uses `--output-format json`, a JSON schema, model defaults, default permission mode, read-only review tools, strict MCP config, and a bounded budget. Use `--hermetic` only when `ANTHROPIC_API_KEY` or `apiKeyHelper` is available and the user explicitly wants `claude --bare` isolation.
 
 Keep review inputs compact. Summarize broad diffs into checkpoint evidence and changed-file lists before invoking Claude; pass detailed files only when the review finding depends on them. The helper saves the exact prompt as `<review.out>.prompt.md` by default, so inspect that file when Claude times out or returns an ambiguous result.
 

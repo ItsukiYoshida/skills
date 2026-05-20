@@ -2,38 +2,24 @@
 
 The review gate decides whether the goal can be completed. It is not a generic style review; it checks the completed checkpoints against the user's plan and the collected evidence.
 
-## Accepted Forms
+## Machine Contract
 
-Plain text:
-
-```text
-ACCEPTED
-```
-
-JSON:
+Review output must be a JSON object matching this shape:
 
 ```json
 {
   "status": "ACCEPTED",
+  "summary": "All checkpoints are satisfied.",
   "findings": []
 }
 ```
 
-## Changes Requested Forms
-
-Plain text:
-
-```text
-CHANGES_REQUESTED
-- CP-002: Missing test for failed API response.
-- CP-004: Docs still mention removed fallback behavior.
-```
-
-JSON:
+or:
 
 ```json
 {
   "status": "CHANGES_REQUESTED",
+  "summary": "Required fixes remain.",
   "findings": [
     {
       "checkpoint": "CP-002",
@@ -46,6 +32,8 @@ JSON:
   ]
 }
 ```
+
+`ACCEPTED` with non-empty findings is treated as `CHANGES_REQUESTED`.
 
 ## Reviewer Prompt Skeleton
 
@@ -69,9 +57,7 @@ Review focus:
 - Is the verification evidence sufficient for the risk and blast radius?
 - Are there unintended scope changes, fallback behavior, or contract drift?
 
-Return exactly one terminal status:
-- ACCEPTED if no required fixes remain.
-- CHANGES_REQUESTED if required fixes remain, followed by actionable findings.
+Return only the required JSON object.
 ```
 
 ## Default Claude Command
@@ -86,11 +72,11 @@ python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
   --timeout-sec 180
 ```
 
-The helper runs `claude -p`, writes Claude's review output, classifies it with `validate_review_acceptance.py`, and exits:
+The helper runs `claude -p` with structured JSON output, writes Claude's raw output, classifies it with `validate_review_acceptance.py`, and exits:
 
 - `0`: review is clearly `ACCEPTED`
 - `1`: review is `CHANGES_REQUESTED`
-- `2`: review status is ambiguous or invalid
+- `2`: reviewer is unavailable, timed out, failed, or returned ambiguous output
 
 The helper writes the generated prompt to `<review.out>.prompt.md` by default, then passes that file to `claude -p` over stdin. This keeps large review context out of `ps` output, leaves an inspectable prompt artifact, and makes timeout handling reliable.
 
@@ -102,14 +88,23 @@ python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
   --output review.out
 ```
 
-If running manually, keep the same contract:
+The helper defaults are intentionally review-scoped and OAuth compatible:
+
+- No `--bare` by default, so Claude subscription/OAuth/keychain auth continues to work.
+- `--strict-mcp-config` without MCP config to avoid ambient MCP startup.
+- `--model opus --fallback-model sonnet` for consistent review quality.
+- `--permission-mode default` with read-only review tools and write tools denied.
+- `--max-budget-usd 2` and `--timeout-sec 180` to bound runaway reviews.
+- `--hermetic` is opt-in and maps to `claude --bare`; it requires `ANTHROPIC_API_KEY` or an `apiKeyHelper` setting because OAuth/keychain auth is disabled by Claude in bare mode.
+
+Manual invocation should preserve the same shape:
 
 ```bash
-claude -p --output-format text --no-session-persistence < review-prompt.md
+claude -p --model opus --output-format json --json-schema '<status/findings schema>' --permission-mode default --strict-mcp-config --no-session-persistence < review-prompt.md
 ```
 
 ## Classification Guidance
 
 - Advisory improvements do not block acceptance unless they contradict the user's constraints or acceptance criteria.
 - Missing verification blocks acceptance when the checkpoint touches shared contracts, user-visible behavior, persistence, security, deployment, or long-lived automation.
-- Ambiguous review output should be treated as `CHANGES_REQUESTED` until clarified.
+- Ambiguous review output is `UNKNOWN`, not `ACCEPTED` and not `CHANGES_REQUESTED`.
