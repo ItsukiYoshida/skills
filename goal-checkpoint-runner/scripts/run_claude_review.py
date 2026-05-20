@@ -58,6 +58,8 @@ REVIEW_SCHEMA = {
     },
     "required": ["status", "findings"],
 }
+MAX_INLINE_SETTINGS_CHARS = 65536
+MAX_SETTINGS_PATH_CHARS = 4096
 
 
 def _read_optional(path: str | None) -> str:
@@ -145,15 +147,26 @@ def _contains_api_key_helper(value: Any) -> bool:
 def _settings_has_api_key_helper(settings: str | None) -> bool:
     if not settings:
         return False
-    settings_path = Path(settings).expanduser()
+
+    stripped = settings.lstrip()
+    if stripped.startswith(("{", "[")):
+        if len(settings) > MAX_INLINE_SETTINGS_CHARS:
+            return False
+        raw = settings
+    else:
+        if len(settings) > MAX_SETTINGS_PATH_CHARS:
+            return False
+        settings_path = Path(settings).expanduser()
+        try:
+            if not settings_path.is_file():
+                return False
+            raw = settings_path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+
     try:
-        raw = (
-            settings_path.read_text(encoding="utf-8")
-            if settings_path.exists()
-            else settings
-        )
         parsed = json.loads(raw)
-    except (OSError, json.JSONDecodeError):
+    except json.JSONDecodeError:
         return False
     return _contains_api_key_helper(parsed)
 

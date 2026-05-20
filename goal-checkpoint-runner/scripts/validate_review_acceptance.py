@@ -18,6 +18,7 @@ from typing import Any
 ACCEPTED = "ACCEPTED"
 CHANGES_REQUESTED = "CHANGES_REQUESTED"
 UNKNOWN = "UNKNOWN"
+MAX_DIAGNOSTIC_CHARS = 1000
 
 
 def _read_input(path: str | None) -> str:
@@ -76,11 +77,27 @@ def _review_payload(parsed: Any) -> Any:
 
 
 def _diagnostics(parsed: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: parsed[key]
-        for key in ("error_subtype", "api_error_status", "error_result")
-        if parsed.get(key)
-    }
+    diagnostics: dict[str, Any] = {}
+    for key in ("error_subtype", "api_error_status", "error_result"):
+        value = _diagnostic_value(parsed.get(key))
+        if value:
+            diagnostics[key] = value
+    return diagnostics
+
+
+def _diagnostic_value(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(value, sort_keys=True)
+        except TypeError:
+            text = repr(value)
+    if len(text) <= MAX_DIAGNOSTIC_CHARS:
+        return text
+    return text[:MAX_DIAGNOSTIC_CHARS] + "...[truncated]"
 
 
 def _from_mapping(
