@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -129,6 +130,40 @@ def _append_repeated(command: list[str], flag: str, values: list[str]) -> None:
         command.extend(values)
 
 
+def _contains_api_key_helper(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "apiKeyHelper" and bool(item):
+                return True
+            if _contains_api_key_helper(item):
+                return True
+    if isinstance(value, list):
+        return any(_contains_api_key_helper(item) for item in value)
+    return False
+
+
+def _settings_has_api_key_helper(settings: str | None) -> bool:
+    if not settings:
+        return False
+    settings_path = Path(settings).expanduser()
+    try:
+        raw = (
+            settings_path.read_text(encoding="utf-8")
+            if settings_path.exists()
+            else settings
+        )
+        parsed = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return _contains_api_key_helper(parsed)
+
+
+def _has_hermetic_auth(args: argparse.Namespace) -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY")) or _settings_has_api_key_helper(
+        args.settings
+    )
+
+
 def _build_command(args: argparse.Namespace, cwd: Path) -> list[str]:
     command = [args.claude_bin, "-p"]
     if args.hermetic:
@@ -150,6 +185,8 @@ def _build_command(args: argparse.Namespace, cwd: Path) -> list[str]:
         "--add-dir",
         str(cwd),
     ])
+    if args.settings:
+        command.extend(["--settings", args.settings])
     if args.fallback_model:
         command.extend(["--fallback-model", args.fallback_model])
     if args.max_budget_usd:
@@ -186,7 +223,7 @@ def main() -> int:
     parser.add_argument(
         "--timeout-sec",
         type=int,
-        default=180,
+        default=300,
         help="Maximum seconds to wait for claude -p before returning UNKNOWN.",
     )
     parser.add_argument(
@@ -226,6 +263,13 @@ def main() -> int:
         help="Use claude --bare. This disables OAuth/keychain auth and requires ANTHROPIC_API_KEY or apiKeyHelper.",
     )
     parser.add_argument(
+        "--settings",
+        help=(
+            "Claude settings JSON or settings file path. Used mainly for "
+            "--hermetic apiKeyHelper auth."
+        ),
+    )
+    parser.add_argument(
         "--allowed-tool",
         action="append",
         default=None,
@@ -263,6 +307,18 @@ def main() -> int:
             prompt_chars=prompt_chars,
             prompt_file=str(prompt_output),
             max_prompt_chars=args.max_prompt_chars,
+        )
+        return 2
+
+    if args.hermetic and not _has_hermetic_auth(args):
+        _unknown(
+            output_path,
+            "claude_auth_missing_for_hermetic",
+            prompt_file=str(prompt_output),
+            reason=(
+                "--hermetic uses claude --bare, which ignores OAuth/keychain auth. "
+                "Set ANTHROPIC_API_KEY or pass --settings with apiKeyHelper."
+            ),
         )
         return 2
 

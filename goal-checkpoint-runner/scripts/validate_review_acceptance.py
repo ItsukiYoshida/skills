@@ -56,7 +56,13 @@ def _review_payload(parsed: Any) -> Any:
         return parsed
 
     if parsed.get("is_error") is True:
-        return {"status": UNKNOWN, "findings": None}
+        return {
+            "status": UNKNOWN,
+            "findings": None,
+            "error_subtype": parsed.get("subtype"),
+            "api_error_status": parsed.get("api_error_status"),
+            "error_result": parsed.get("result"),
+        }
 
     for key in ("structured_output", "result", "content", "message"):
         if key in parsed:
@@ -69,20 +75,30 @@ def _review_payload(parsed: Any) -> Any:
     return parsed
 
 
-def _from_mapping(parsed: dict[str, Any]) -> tuple[str | None, int | None]:
+def _diagnostics(parsed: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: parsed[key]
+        for key in ("error_subtype", "api_error_status", "error_result")
+        if parsed.get(key)
+    }
+
+
+def _from_mapping(
+    parsed: dict[str, Any],
+) -> tuple[str | None, int | None, dict[str, Any]]:
     status = _normalize_status(parsed.get("status") or parsed.get("result"))
     findings = parsed.get("findings")
     finding_count = len(findings) if isinstance(findings, list) else None
     if status == ACCEPTED and finding_count not in (None, 0):
-        return CHANGES_REQUESTED, finding_count
-    return status, finding_count
+        return CHANGES_REQUESTED, finding_count, _diagnostics(parsed)
+    return status, finding_count, _diagnostics(parsed)
 
 
-def _from_json(raw: str) -> tuple[str | None, int | None]:
+def _from_json(raw: str) -> tuple[str | None, int | None, dict[str, Any]]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return None, None
+        return None, None, {}
 
     payload = _review_payload(parsed)
     if isinstance(payload, dict):
@@ -91,13 +107,13 @@ def _from_json(raw: str) -> tuple[str | None, int | None]:
         loaded = _json_loads_maybe(payload)
         if isinstance(loaded, dict):
             return _from_mapping(loaded)
-        return _normalize_status(payload), None
-    return None, None
+        return _normalize_status(payload), None, {}
+    return None, None, {}
 
 
 def classify(raw: str) -> dict[str, Any]:
     stripped = raw.strip()
-    status, finding_count = _from_json(stripped)
+    status, finding_count, diagnostics = _from_json(stripped)
 
     if status is None:
         first_line = stripped.splitlines()[0].strip() if stripped else ""
@@ -106,11 +122,13 @@ def classify(raw: str) -> dict[str, Any]:
     if status is None:
         status = UNKNOWN
 
-    return {
+    result = {
         "accepted": status == ACCEPTED,
         "status": status,
         "finding_count": finding_count,
     }
+    result.update(diagnostics)
+    return result
 
 
 def main() -> int:
