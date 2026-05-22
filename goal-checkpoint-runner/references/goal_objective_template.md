@@ -2,6 +2,8 @@
 
 Use this template when creating a goal objective after planning or before clearing context.
 
+CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must run the `run_claude_review.py` command in a shell. Resolve the helper path before writing the objective; do not leave `<skill-dir>` in the final goal. If the transcript shows only a spawned SubAgent, built-in `/review`, or prose review attempt, CP-FINAL has not been attempted.
+
 ```markdown
 # Goal
 
@@ -25,9 +27,24 @@ Use this template when creating a goal objective after planning or before cleari
   - Evidence required: ...
 - CP-FINAL: Acceptance review gate
   - Scope: all completed checkpoints and their evidence
-  - Acceptance: review output is ACCEPTED
-  - Verification: review gate output is classified as accepted
-  - Evidence required: reviewer identities or command, review output path/summary
+  - Acceptance: stdout JSON from the verification command has `status == "ACCEPTED"`
+  - Verification (literal command to execute in the shell; do not paraphrase, delegate, or substitute):
+    ```bash
+    python3 $HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py \
+      --goal-objective <objective.md> \
+      --checkpoints <checkpoints.md> \
+      --evidence <evidence.md> \
+      --changed-files <changed-files.md> \
+      --output review.out
+    # Parse stdout JSON; the `status` field MUST be "ACCEPTED" to pass.
+    # Exit code mapping: 0 ACCEPTED, 1 CHANGES_REQUESTED, 2 unavailable/UNKNOWN.
+    ```
+  - Forbidden review paths (do NOT use any of these for CP-FINAL):
+    - Spawning internal sub-agents (e.g. Codex `Spawned` / sub-agent review).
+    - Built-in `/review` slash command unless the user explicitly asks for it.
+    - Self-review by the implementing agent without running the helper above.
+    - Treating a SubAgent timeout or missing response as a reviewer result.
+  - Evidence required: the exact command invoked, the stdout JSON object, and `review.out` / `<review.out>.prompt.md` paths.
 
 ## Completion Rules
 
@@ -44,7 +61,7 @@ Before clearing context, make sure the next turn can recover:
 - The exact checkpoint list.
 - User constraints that should not be re-litigated.
 - Current status and evidence for each checkpoint.
-- Review command or reviewer contract.
+- Exact `run_claude_review.py` command, stdout JSON, and review output paths.
 - Any files intentionally left dirty or out of scope.
 
 If this data is too large for the goal objective, write a repo-local task file only when appropriate for the project, then reference that file path in the objective.

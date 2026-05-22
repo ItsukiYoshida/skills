@@ -1,4 +1,4 @@
 interface:
   display_name: "Goal Checkpoint Runner"
-  short_description: "Run goal-mode work through checkpoints and review"
-  default_prompt: "Use $goal-checkpoint-runner to turn this plan into a checkpointed goal with a final acceptance review gate."
+  short_description: "Run goal-mode checkpoints with a claude -p review gate"
+  default_prompt: "Use $goal-checkpoint-runner to turn this plan into a checkpointed goal. CP-FINAL must run $HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py as a shell command and parse its stdout JSON status. Do not spawn Codex sub-agents, call built-in /review, or self-review for CP-FINAL unless the user explicitly opts in."
