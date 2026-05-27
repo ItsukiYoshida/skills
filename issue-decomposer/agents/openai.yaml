@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Decomposer"
+  short_description: "Plan GitHub issue graphs with Epics and Sub-Issues"
+  default_prompt: "Use $issue-decomposer to decompose a product or business task into GitHub-ready issues. Decide whether an Epic is warranted, keep Epic work limited to Sub-Issue management, choose repository labels, draft self-contained bodies, and use gh api for first-class Sub-Issue publication when needed."
