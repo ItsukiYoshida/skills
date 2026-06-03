@@ -1,4 +1,4 @@
 interface:
   display_name: "Goal Checkpoint Runner"
-  short_description: "Run goal-mode checkpoints with a claude -p review gate"
-  default_prompt: "Use $goal-checkpoint-runner to turn this plan into a checkpointed goal. CP-FINAL must run $HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py as a shell command and parse its stdout JSON status. Do not spawn Codex sub-agents, call built-in /review, or self-review for CP-FINAL unless the user explicitly opts in."
+  short_description: "Run goal checkpoints through commit, PR, and claude -p review"
+  default_prompt: "Use $goal-checkpoint-runner to turn this plan into a checkpointed goal. Add CP-PUBLISH before CP-FINAL: create debt-unit Conventional Commit commits, push the branch, create a PR, and make the PR title Conventional Commit formatted. Use the separate commit skills skill for commit message and PR title type/scope decisions when available. CP-FINAL must run $HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py as a shell command and parse its stdout JSON status. Do not spawn Codex sub-agents, call built-in /review, or self-review for CP-FINAL unless the user explicitly opts in."

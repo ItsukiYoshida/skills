@@ -2,6 +2,8 @@
 
 Use this template when creating a goal objective after planning or before clearing context.
 
+CP-PUBLISH is required before CP-FINAL unless the user explicitly opts out of commits or PR creation. It creates debt-unit Conventional Commit commits, pushes the branch, and opens a PR whose title is also Conventional Commit formatted. Use the separate `commit skills` skill as the source of truth for commit message and PR title type/scope decisions.
+
 CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must run the `run_claude_review.py` command in a shell. Resolve the helper path before writing the objective; do not leave `<skill-dir>` in the final goal. If the transcript shows only a spawned SubAgent, built-in `/review`, or prose review attempt, CP-FINAL has not been attempted.
 
 ```markdown
@@ -25,8 +27,19 @@ CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must
   - Acceptance: ...
   - Verification: ...
   - Evidence required: ...
+- CP-PUBLISH: Debt-unit commit and PR publication
+  - Scope: all verified implementation checkpoints
+  - Acceptance: work is committed in debt-unit Conventional Commit commits, branch is pushed, PR is created, and the PR title is Conventional Commit formatted
+  - Verification:
+    ```bash
+    git status --short --branch
+    git log <base>..HEAD --oneline
+    gh pr view --json title,url,headRefName,baseRefName
+    ```
+  - Commit/title guidance: use the separate `commit skills` skill for Conventional Commit type/scope selection and formatting
+  - Evidence required: final git status, commit list, pushed branch, PR URL, PR title, and PR body path or summary
 - CP-FINAL: Acceptance review gate
-  - Scope: all completed checkpoints and their evidence
+  - Scope: all completed checkpoints, CP-PUBLISH, and their evidence
   - Acceptance: stdout JSON from the verification command has `status == "ACCEPTED"`
   - Verification (literal command to execute in the shell; do not paraphrase, delegate, or substitute):
     ```bash
@@ -50,7 +63,8 @@ CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must
 
 - Work one checkpoint at a time.
 - Convert CHANGES_REQUESTED review findings into new checkpoints.
-- Do not call update_goal(status="complete") until every checkpoint is verified and CP-FINAL is ACCEPTED.
+- If review fixes are required after PR creation, make additional debt-unit Conventional Commit commits, push them, update the PR as needed, and re-run CP-FINAL.
+- Do not call update_goal(status="complete") until every checkpoint is verified, CP-PUBLISH evidence exists, and CP-FINAL is ACCEPTED.
 - Preserve unrelated dirty worktree changes; do not revert user work.
 ```
 
@@ -61,6 +75,7 @@ Before clearing context, make sure the next turn can recover:
 - The exact checkpoint list.
 - User constraints that should not be re-litigated.
 - Current status and evidence for each checkpoint.
+- Publication evidence: debt-unit commit list, pushed branch, PR URL, PR title, and PR body path or summary.
 - Exact `run_claude_review.py` command, stdout JSON, and review output paths.
 - Any files intentionally left dirty or out of scope.
 

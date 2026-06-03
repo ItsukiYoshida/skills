@@ -50,11 +50,19 @@ Inputs:
 - Checkpoints and statuses:
 - Changed files:
 - Verification evidence:
+- Publication evidence:
+  - Debt-unit commit list:
+  - Pushed branch:
+  - PR URL:
+  - PR title:
+  - PR body path or summary:
 - User constraints:
 
 Review focus:
 - Does the implementation satisfy every checkpoint acceptance criterion?
 - Is the verification evidence sufficient for the risk and blast radius?
+- Are the commits split by debt unit, and are commit messages plus the PR title in Conventional Commit format?
+- Was `commit skills` used or referenced for Conventional Commit type/scope decisions when available?
 - Are there unintended scope changes, fallback behavior, or contract drift?
 
 Return only the required JSON object.

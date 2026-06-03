@@ -1,24 +1,35 @@
 ---
 name: goal-checkpoint-runner
-description: Use when turning a plan into a persistent Codex goal with fine-grained checkpoints, a mandatory claude -p acceptance review gate, ACCEPTED/CHANGES_REQUESTED handling, and evidence-based goal completion. Trigger for goal-mode execution plans, checkpoint decomposition, context-reset handoffs, long-running implementation loops, or final acceptance review gating. Do not use Codex sub-agents, multi-agent review, built-in /review, or self-review for the final acceptance gate unless the user explicitly opts in.
+description: Use when turning a plan into a persistent Codex goal with fine-grained checkpoints, debt-unit Conventional Commit publication, mandatory PR creation, a claude -p acceptance review gate, ACCEPTED/CHANGES_REQUESTED handling, and evidence-based goal completion. Trigger for goal-mode execution plans, checkpoint decomposition, context-reset handoffs, long-running implementation loops, debt-unit commit/PR publication, or final acceptance review gating. Do not use Codex sub-agents, multi-agent review, built-in /review, or self-review for the final acceptance gate unless the user explicitly opts in.
 ---
 
 # Goal Checkpoint Runner
 
 ## Purpose
 
-Use this skill to run long implementation work through Codex goal mode without assuming that goal mode contains a review engine. The skill turns a plan into verifiable checkpoints, preserves the plan across context resets, adds an explicit `claude -p` review gate, and only completes the goal after the helper returns `ACCEPTED`.
+Use this skill to run long implementation work through Codex goal mode without assuming that goal mode contains a review engine. The skill turns a plan into verifiable checkpoints, preserves the plan across context resets, requires debt-unit Conventional Commit publication and PR creation, adds an explicit `claude -p` review gate, and only completes the goal after the helper returns `ACCEPTED`.
 
 ## Workflow
 
 1. Capture the source plan before any context clear. If the user has only a rough plan, first split it into checkpoints.
 2. Normalize the plan into checkpoint records with stable IDs, acceptance criteria, verification commands, and expected evidence. See `references/checkpoint_schema.md` when the plan needs structure.
-3. Build a goal objective that includes the source plan, checkpoint list, final review gate, and completion rules. Use `references/goal_objective_template.md` when composing the objective.
+3. Build a goal objective that includes the source plan, checkpoint list, publication checkpoint, final review gate, and completion rules. Use `references/goal_objective_template.md` when composing the objective.
 4. Start or continue goal-mode work with that objective. Keep the objective as the source of truth after context reset; if the objective would be too large, write a task file first and reference it from the goal.
 5. Work checkpoint by checkpoint. After each checkpoint, record evidence: changed files, tests, manual checks, known residual risk, and whether a review is now required.
-6. At the review gate, you MUST invoke `scripts/run_claude_review.py` as the literal verification command of CP-FINAL and read its stdout JSON `status` field. Do not delegate the review to any internal sub-agent (e.g. Codex `Spawned` sub-agents), to the built-in `/review` slash command, or to the implementing agent itself. The only acceptable substitute is an explicit external reviewer command provided by the user.
-7. Treat `CHANGES_REQUESTED` as new checkpoint work. Convert each actionable finding into a checkpoint, fix it, verify it, and re-run the gate.
-8. Call `update_goal(status="complete")` only when all checkpoints are done, required evidence exists, and the final review gate is `ACCEPTED`.
+6. Before CP-FINAL, publish the finished work: create debt-unit commits using Conventional Commit messages, push the branch, and create a PR. The PR title MUST also be in Conventional Commit format.
+7. For commit message and PR title type/scope decisions, instruct the agent to use the separate `commit skills` skill when it is available. Do not duplicate the Conventional Commit rulebook here; this skill owns the requirement and evidence, while `commit skills` owns naming conventions.
+8. At the review gate, you MUST invoke `scripts/run_claude_review.py` as the literal verification command of CP-FINAL and read its stdout JSON `status` field. Do not delegate the review to any internal sub-agent (e.g. Codex `Spawned` sub-agents), to the built-in `/review` slash command, or to the implementing agent itself. The only acceptable substitute is an explicit external reviewer command provided by the user.
+9. Treat `CHANGES_REQUESTED` as new checkpoint work. Convert each actionable finding into a checkpoint, fix it, verify it, make any additional debt-unit Conventional Commit(s), update the PR, and re-run the gate.
+10. Call `update_goal(status="complete")` only when all checkpoints are done, publication evidence exists, and the final review gate is `ACCEPTED`.
+
+## Publication Rules
+
+- Add a publication checkpoint before CP-FINAL unless the user explicitly says not to commit or not to create a PR.
+- Group commits by debt unit: each commit should correspond to one coherent implementation, test, documentation, or review-fix concern. A small task may have one commit if it is truly one debt unit.
+- Use Conventional Commit format for every commit message and for the PR title.
+- When composing commit messages or the PR title, reference `commit skills` as the source of truth for Conventional Commit type/scope selection and formatting.
+- The PR body should state the goal, what changed, verification evidence, and residual risks or skipped checks.
+- Record publication evidence: `git status`, `git log <base>..HEAD`, pushed branch, PR URL, PR title, and the PR body path or summary.
 
 ## CP-FINAL Execution Rule
 
