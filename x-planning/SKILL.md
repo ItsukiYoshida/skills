@@ -1,6 +1,6 @@
 ---
 name: x-planning
-description: Use only in Codex Plan mode to turn vague implementation wishes, GitHub issues, or user-described tasks into a strict implementation plan that starts with $goal-checkpoint-runner. Trigger when the user wants to decide what to build, refine loose requirements through questions, choose from repository issues, or prepare a goal-checkpoint-runner-ready plan before implementation. Reject use outside Plan mode.
+description: Use only in Plan mode to turn vague implementation wishes, GitHub issues, or user-described tasks into a strict implementation plan that instructs the host agent to use the goal-checkpoint-runner skill. Trigger when the user wants to decide what to build, refine loose requirements through questions, choose from repository issues, or prepare a goal-checkpoint-runner-ready plan before implementation. Reject use outside Plan mode.
 ---
 
 # X Planning
@@ -12,19 +12,19 @@ Use this skill only in Plan mode.
 If the current turn is not running in Plan mode, reject the request immediately:
 
 ```text
-This skill must be used in Plan mode because it relies on Plan-mode requirement gathering and ask flow. Switch to Plan mode and invoke $x-planning again.
+This skill must be used in Plan mode because it relies on Plan-mode requirement gathering and ask flow. Switch to Plan mode and invoke the x-planning skill again.
 ```
 
-Do not inspect issues, draft a plan, spawn agents, or call `$goal-checkpoint-runner` outside Plan mode.
+Do not inspect issues, draft a plan, spawn agents, or use the `goal-checkpoint-runner` skill outside Plan mode.
 
 ## Purpose
 
-Use this skill before `$goal-checkpoint-runner`. Its job is to make ambiguous work precise enough for implementation. It does not decompose finished requirements into checkpoint execution details; leave CP splitting, goal-mode operation, and the final review gate to `$goal-checkpoint-runner`.
+Use this skill before instructing the host agent to use the `goal-checkpoint-runner` skill. Its job is to make ambiguous work precise enough for implementation. It does not decompose finished requirements into checkpoint execution details; leave CP splitting, goal-mode operation, and the final review gate to `goal-checkpoint-runner`.
 
-The final output is a user-approved implementation plan whose first line is:
+The final output is a user-approved implementation plan whose first line instructs the host agent to use the implementation skill:
 
 ```text
-$goal-checkpoint-runner
+Use the goal-checkpoint-runner skill.
 ```
 
 ## Workflow
@@ -71,7 +71,7 @@ Use short, focused asks to resolve only decisions that materially change impleme
 - Migration, rollout, or operational constraints.
 - Verification expectations and acceptable manual checks.
 
-Avoid asking for implementation decomposition too early. The planning skill should turn fuzzy intent into a strict target; `$goal-checkpoint-runner` will split that target into checkpoints.
+Avoid asking for implementation decomposition too early. The planning skill should turn fuzzy intent into a strict target; `goal-checkpoint-runner` will split that target into checkpoints.
 
 When the user answers with an issue number, inspect that issue and ask only the missing contract questions. When the user answers with free-form requirements, map them to existing repo flows before proposing new surfaces.
 
@@ -85,11 +85,11 @@ Use subagents when independent context gathering will reduce uncertainty:
 
 Tell every subagent that they are not alone in the codebase and must not edit files. Planning subagents should return evidence, file references, risks, and open questions only.
 
-Do not spawn worker agents for implementation from this skill. Implementation belongs to the later `$goal-checkpoint-runner` phase after the plan is accepted.
+Do not spawn worker agents for implementation from this skill. Implementation belongs to the later `goal-checkpoint-runner` phase after the plan is accepted.
 
 ### 5. Produce the Implementation Plan
 
-After requirements are clear enough, produce a concise plan for user confirmation. The plan must be actionable by `$goal-checkpoint-runner` and should contain:
+After requirements are clear enough, produce a concise plan for user confirmation. The plan must be actionable by the `goal-checkpoint-runner` skill and should contain:
 
 - Source task: issue number/URL or user-provided task statement.
 - Objective: one paragraph describing the exact desired outcome.
@@ -100,19 +100,19 @@ After requirements are clear enough, produce a concise plan for user confirmatio
 - Risks and questions: only unresolved items that must be settled before or during implementation.
 - Suggested checkpoint boundaries: coarse responsibility boundaries only, not detailed CP records.
 
-Start the plan with the exact invocation line:
+Start the plan with this exact host-neutral instruction line:
 
 ```text
-$goal-checkpoint-runner
+Use the goal-checkpoint-runner skill.
 ```
 
-Do not write the final plan as `$goal-checkout-runner`; the implementation skill name is `$goal-checkpoint-runner`.
+Do not write the final plan as `goal-checkout-runner`; the implementation skill name is `goal-checkpoint-runner`.
 
 ### 6. Handoff Rules
 
 Make the handoff explicit:
 
-- State that `$goal-checkpoint-runner` should convert the accepted plan into CP records, create or continue the goal, execute checkpoints, collect evidence, and run its CP-FINAL review gate.
+- State that the `goal-checkpoint-runner` skill should convert the accepted plan into CP records, create or continue the goal, execute checkpoints, collect evidence, and run its CP-FINAL review gate.
 - Include any user constraints that affect checkpointing, such as commit boundaries, no-fallback policy, live-environment verification, or required docs/tests.
 - Do not preemptively create a goal from this skill unless the user has accepted the plan and explicitly wants to begin implementation.
 
@@ -121,7 +121,7 @@ Make the handoff explicit:
 Use this shape for the final plan:
 
 ```markdown
-$goal-checkpoint-runner
+Use the goal-checkpoint-runner skill.
 
 ## Source Task
 ...

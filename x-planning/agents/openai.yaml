@@ -1,4 +1,4 @@
 interface:
   display_name: "X Planning"
   short_description: "Plan-mode task refinement for goal runs"
-  default_prompt: "Use $x-planning to turn a rough implementation idea or GitHub issue into a $goal-checkpoint-runner-ready plan."
+  default_prompt: "Use x-planning to turn a rough implementation idea or GitHub issue into a plan that instructs the host agent to use the goal-checkpoint-runner skill."
