@@ -1,26 +1,30 @@
 ---
 name: goal-checkpoint-runner
-description: Use when turning a plan into a persistent Codex goal with fine-grained checkpoints, debt-unit Conventional Commit publication, mandatory PR creation, a claude -p acceptance review gate, ACCEPTED/CHANGES_REQUESTED handling, and evidence-based goal completion. Trigger for goal-mode execution plans, checkpoint decomposition, context-reset handoffs, long-running implementation loops, debt-unit commit/PR publication, or final acceptance review gating. Do not use Codex sub-agents, multi-agent review, built-in /review, or self-review for the final acceptance gate unless the user explicitly opts in.
+description: Use when turning a plan into a persistent agent goal with fine-grained checkpoints, debt-unit Conventional Commit publication, mandatory PR creation, selectable quality gates, ACCEPTED/CHANGES_REQUESTED handling, and evidence-based goal completion. Trigger for goal-mode execution plans, checkpoint decomposition, context-reset handoffs, long-running implementation loops, debt-unit commit/PR publication, or final acceptance review gating. During planning, ask the user to choose SubAgents Review, Codex Review, or Claude Review as the CP-FINAL quality gate.
 ---
 
 # Goal Checkpoint Runner
 
 ## Purpose
 
-Use this skill to run long implementation work through Codex goal mode without assuming that goal mode contains a review engine. The skill turns a plan into verifiable checkpoints, preserves the plan across context resets, requires debt-unit Conventional Commit publication and PR creation, adds an explicit `claude -p` review gate, and only completes the goal after the helper returns `ACCEPTED`.
+Use this skill to run long implementation work through a persistent agent goal without assuming the host agent contains a reliable review engine. The skill turns a plan into verifiable checkpoints, preserves the plan across context resets, requires debt-unit Conventional Commit publication and PR creation, asks which quality gate to use, and only completes the goal after the selected gate returns `ACCEPTED`.
 
 ## Workflow
 
 1. Capture the source plan before any context clear. If the user has only a rough plan, first split it into checkpoints.
 2. Normalize the plan into checkpoint records with stable IDs, acceptance criteria, verification commands, and expected evidence. See `references/checkpoint_schema.md` when the plan needs structure.
-3. Build a goal objective that includes the source plan, checkpoint list, publication checkpoint, final review gate, and completion rules. Use `references/goal_objective_template.md` when composing the objective.
-4. Start or continue goal-mode work with that objective. Keep the objective as the source of truth after context reset; if the objective would be too large, write a task file first and reference it from the goal.
-5. Work checkpoint by checkpoint. After each checkpoint, record evidence: changed files, tests, manual checks, known residual risk, and whether a review is now required.
-6. Before CP-FINAL, publish the finished work: create debt-unit commits using Conventional Commit messages, push the branch, and create a PR. The PR title MUST also be in Conventional Commit format.
-7. For commit message and PR title type/scope decisions, instruct the agent to use the separate `commit skills` skill when it is available. Do not duplicate the Conventional Commit rulebook here; this skill owns the requirement and evidence, while `commit skills` owns naming conventions.
-8. At the review gate, you MUST invoke `scripts/run_claude_review.py` as the literal verification command of CP-FINAL and read its stdout JSON `status` field. Do not delegate the review to any internal sub-agent (e.g. Codex `Spawned` sub-agents), to the built-in `/review` slash command, or to the implementing agent itself. The only acceptable substitute is an explicit external reviewer command provided by the user.
-9. Treat `CHANGES_REQUESTED` as new checkpoint work. Convert each actionable finding into a checkpoint, fix it, verify it, make any additional debt-unit Conventional Commit(s), update the PR, and re-run the gate.
-10. Call `update_goal(status="complete")` only when all checkpoints are done, publication evidence exists, and the final review gate is `ACCEPTED`.
+3. During planning, ask the user which CP-FINAL quality gate to use. Prefer `AskUserQuestion` when the host provides it; otherwise ask a concise plain-text question with the same three choices:
+   - `SubAgents Review`: use the host's parallel sub-agent review mechanism.
+   - `Codex Review`: run a Codex-style structured review and the official Codex review entrypoint in parallel, then merge the results.
+   - `Claude Review`: run the existing structured Claude review and Claude CLI's official `/review` command in parallel, then merge the results.
+4. Build a goal objective that includes the source plan, checkpoint list, publication checkpoint, selected final quality gate, and completion rules. Use `references/goal_objective_template.md` when composing the objective.
+5. Start or continue goal-mode work with that objective. Keep the objective as the source of truth after context reset; if the objective would be too large, write a task file first and reference it from the goal.
+6. Work checkpoint by checkpoint. After each checkpoint, record evidence: changed files, tests, manual checks, known residual risk, and whether a review is now required.
+7. Before CP-FINAL, publish the finished work: create debt-unit commits using Conventional Commit messages, push the branch, and create a PR. The PR title MUST also be in Conventional Commit format.
+8. For commit message and PR title type/scope decisions, instruct the agent to use the separate `commit skills` skill when it is available. Do not duplicate the Conventional Commit rulebook here; this skill owns the requirement and evidence, while `commit skills` owns naming conventions.
+9. At CP-FINAL, run the selected quality gate exactly as recorded in the objective. Parse or normalize the merged result into the shared `status` / `findings` contract.
+10. Treat `CHANGES_REQUESTED` as new checkpoint work. Convert each actionable finding into a checkpoint, fix it, verify it, make any additional debt-unit Conventional Commit(s), update the PR, and re-run the selected gate.
+11. Call `update_goal(status="complete")` only when all checkpoints are done, publication evidence exists, and the selected final quality gate is `ACCEPTED`.
 
 ## Publication Rules
 
@@ -33,36 +37,59 @@ Use this skill to run long implementation work through Codex goal mode without a
 
 ## CP-FINAL Execution Rule
 
-Before using any `spawn_agent`, `followup_task`, `/review`, or prose review path for CP-FINAL, stop and run the helper command instead. The expected transcript must contain a shell command invoking `scripts/run_claude_review.py`; if no such command was attempted, CP-FINAL has not started. A timeout from an internal SubAgent is irrelevant to this skill's review gate and must not be treated as review evidence.
+CP-FINAL must execute the quality gate chosen during planning. Do not silently substitute another gate after implementation. If the chosen gate cannot run, mark the review result `UNKNOWN` and ask the user whether to switch gates; do not self-approve.
 
 ## Review Gate Rules
 
-- Do not rely on built-in `/review`, on Codex internal sub-agent spawning (e.g. `Spawned ...` workers), or on self-review by the implementing agent as the acceptance gate. Codex's sub-agent flow does not enforce the review output contract and has been observed to return policy summaries instead of diff reviews; treat it as out of scope for CP-FINAL unless the user explicitly opts in.
-- The acceptance review gate MUST run `scripts/run_claude_review.py` (which wraps `claude -p`). Embed the literal command in CP-FINAL's verification field; do not paraphrase, summarize, or replace it with an inline review. Resolve the helper to an executable path before writing the goal objective; for this user's global install, prefer `$HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py`.
-- Treat `claude -p` timeout, failure, empty output, or missing binary as an unavailable review gate, not as acceptance or actionable requested changes. Do not start fallback reviewers unless the user explicitly asks for a fallback path.
-- Require structured review output with `status: "ACCEPTED"` or `status: "CHANGES_REQUESTED"` and a `findings` array.
+- Record the selected gate name and exact execution plan in CP-FINAL before implementation starts.
+- Run multiple reviewers inside a selected gate in parallel whenever the host/runtime supports parallel execution. If parallel execution is unavailable, run both reviewers before merging and note that they were sequential.
+- Require the merged review result to use `status: "ACCEPTED"`, `status: "CHANGES_REQUESTED"`, or `status: "UNKNOWN"` plus a `findings` array when findings exist.
 - Use `scripts/validate_review_acceptance.py` when a deterministic local check is useful for review output from a file or stdin.
+- If any reviewer returns actionable blocking findings, the merged status is `CHANGES_REQUESTED`.
+- If any required reviewer is unavailable, times out, or returns ambiguous output, the merged status is `UNKNOWN` unless another selected reviewer clearly returns `CHANGES_REQUESTED`.
 - If a reviewer gives prose without structured status, classify it as `UNKNOWN`; do not treat it as accepted or as actionable requested changes.
+- Do not treat self-review by the implementing agent as CP-FINAL evidence unless the user explicitly selected a self-review fallback.
 - Never mark the goal complete because token budget, time budget, or patience is exhausted.
 
-## Claude Review Shape
+## Quality Gate Shapes
 
-The default reviewer is Claude Code in non-interactive print mode. Use one review prompt that explicitly asks Claude to act as three focused reviewers:
+### SubAgents Review
+
+Use this gate only when the user selects it. Spawn or request three independent reviewers in parallel when the host supports sub-agents:
 
 - Implementation reviewer: checks behavior against the checkpoint plan and inspects likely code paths.
 - Verification reviewer: checks tests, commands, manual evidence, and missing coverage.
 - Scope reviewer: checks unintended changes, user constraints, compatibility/fallback policy, and dirty worktree boundaries.
 
-Give Claude the checkpoint list, changed-file summary, verification evidence, and the required response contract from `references/review_gate.md`. Do not ask Claude to redo implementation.
+Each sub-agent must receive the checkpoint list, changed-file summary, verification evidence, publication evidence, user constraints, and the response contract from `references/review_gate.md`. Do not pass the implementer's conclusions as ground truth. Merge their results with the Review Gate Rules above.
+
+### Codex Review
+
+Use this gate only when the user selects it and a Codex runtime is available. Run both of these reviewer paths in parallel and merge them:
+
+- Structured Codex review: invoke Codex non-interactively with the same review prompt shape used by `scripts/run_claude_review.py`, asking for the shared JSON contract.
+- Official Codex review: invoke the official Codex review entrypoint provided by the runtime, such as a `/review` slash command or non-interactive `review` command.
+
+The structured path provides the machine contract. The official path provides the runtime's native review behavior. If the official path returns prose, summarize concrete blocking findings into the shared contract before merging.
+
+### Claude Review
+
+Use this gate only when the user selects it and a Claude runtime is available. Run both of these reviewer paths in parallel and merge them:
+
+- Structured Claude review: use `scripts/run_claude_review.py` or an equivalent `claude -p` invocation with the shared JSON contract.
+- Official Claude review: invoke Claude CLI's official review command, normally `claude -p "/review pr#<number>"`.
+
+Give the structured reviewer the checkpoint list, changed-file summary, verification evidence, publication evidence, user constraints, and the required response contract from `references/review_gate.md`. Give the official reviewer the PR target and any concise review instructions that fit the `/review` command. Do not ask either reviewer to redo implementation.
 
 The helper keeps OAuth/subscription login compatible by default. It uses `--output-format json`, a JSON schema, model defaults, default permission mode, read-only review tools, strict MCP config, and a bounded budget. This mode is not fully hermetic: Claude may still read normal settings, hooks, and CLAUDE.md context that apply to the subprocess. Use `--hermetic` only when `ANTHROPIC_API_KEY` or `apiKeyHelper` is available and the user explicitly wants `claude --bare` isolation.
 
-Keep review inputs compact. Summarize broad diffs into checkpoint evidence and changed-file lists before invoking Claude; pass detailed files only when the review finding depends on them. The helper saves the exact prompt as `<review.out>.prompt.md` by default, so inspect that file when Claude times out or returns an ambiguous result.
+Keep review inputs compact for every gate. Summarize broad diffs into checkpoint evidence and changed-file lists before invoking reviewers; pass detailed files only when a finding depends on them. The Claude helper saves the exact prompt as `<review.out>.prompt.md` by default, so inspect that file when Claude times out or returns an ambiguous result.
 
 ## Resources
 
 - `references/checkpoint_schema.md`: Checkpoint format and decomposition rules.
 - `references/goal_objective_template.md`: Goal objective template for context-reset handoff.
 - `references/review_gate.md`: Review status contract and reviewer prompt skeleton.
+- `references/review_schema.json`: Shared structured review schema for runtimes that accept output schemas.
 - `scripts/run_claude_review.py`: Build and run the default `claude -p` acceptance review.
 - `scripts/validate_review_acceptance.py`: Deterministic `ACCEPTED`/`CHANGES_REQUESTED` classifier for review output.

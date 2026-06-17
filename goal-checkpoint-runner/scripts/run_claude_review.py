@@ -24,6 +24,7 @@ from validate_review_acceptance import classify as classify_review
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 DEFAULT_CONTRACT = SKILL_DIR / "references" / "review_gate.md"
+DEFAULT_SCHEMA = SKILL_DIR / "references" / "review_schema.json"
 DEFAULT_ALLOWED_TOOLS = [
     "Read",
     "Grep",
@@ -33,31 +34,6 @@ DEFAULT_ALLOWED_TOOLS = [
     "Bash(git status:*)",
 ]
 DEFAULT_DISALLOWED_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
-REVIEW_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "status": {"type": "string", "enum": ["ACCEPTED", "CHANGES_REQUESTED"]},
-        "summary": {"type": "string"},
-        "findings": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": True,
-                "properties": {
-                    "checkpoint": {"type": "string"},
-                    "severity": {"type": "string"},
-                    "file": {"type": "string"},
-                    "line": {"type": "integer"},
-                    "problem": {"type": "string"},
-                    "required_fix": {"type": "string"},
-                },
-                "required": ["problem"],
-            },
-        },
-    },
-    "required": ["status", "findings"],
-}
 MAX_INLINE_SETTINGS_CHARS = 65536
 MAX_SETTINGS_PATH_CHARS = 4096
 
@@ -74,6 +50,10 @@ def _classify(raw: str) -> dict[str, Any]:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _review_schema() -> dict[str, Any]:
+    return json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
 
 
 def _unknown(
@@ -93,7 +73,7 @@ def _build_prompt(args: argparse.Namespace) -> str:
     sections = [
         "# Role",
         (
-            "You are the final acceptance review gate for a checkpointed Codex "
+            "You are the final acceptance review gate for a checkpointed agent "
             "goal. Review only; do not implement changes."
         ),
         "# Review Roles",
@@ -190,7 +170,7 @@ def _build_command(args: argparse.Namespace, cwd: Path) -> list[str]:
         "--output-format",
         "json",
         "--json-schema",
-        json.dumps(REVIEW_SCHEMA, separators=(",", ":")),
+        json.dumps(_review_schema(), separators=(",", ":")),
         "--permission-mode",
         args.permission_mode,
         "--no-session-persistence",

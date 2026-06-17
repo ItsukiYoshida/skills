@@ -2,6 +2,14 @@
 
 The review gate decides whether the goal can be completed. It is not a generic style review; it checks the completed checkpoints against the user's plan and the collected evidence.
 
+During planning, choose exactly one gate with `AskUserQuestion` when available:
+
+- `SubAgents Review`: three host-provided sub-agent reviewers run in parallel.
+- `Codex Review`: structured Codex review plus the official Codex `/review` or review command run in parallel.
+- `Claude Review`: structured Claude review plus Claude CLI's official `/review` command run in parallel.
+
+The selected gate must be recorded in the goal objective before implementation starts.
+
 ## Machine Contract
 
 Review output must be a JSON object matching this shape:
@@ -38,7 +46,11 @@ or:
 ## Reviewer Prompt Skeleton
 
 ```text
-You are reviewing a checkpointed goal implementation through three roles:
+You are reviewing a checkpointed goal implementation.
+
+Selected quality gate:
+
+Reviewer role for this invocation:
 - Implementation reviewer
 - Verification reviewer
 - Scope reviewer
@@ -68,17 +80,29 @@ Review focus:
 Return only the required JSON object.
 ```
 
-## Default Claude Command
+## Gate Execution
 
-Use the bundled helper when possible:
+### Claude Review
+
+Run the structured Claude review and Claude CLI's official `/review` command in parallel.
+
+Use the bundled helper for the structured Claude path when possible:
 
 ```bash
 python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
   --goal-objective goal.md \
   --evidence evidence.md \
-  --output review.out \
+  --output review.structured.out \
   --timeout-sec 300
 ```
+
+The official path should invoke Claude CLI's `/review` command against the published PR and save that output separately:
+
+```bash
+claude -p "/review pr#<number>" > review.official.out
+```
+
+Use the PR number or PR URL from CP-PUBLISH evidence. Add concise extra review instructions to the prompt only when needed.
 
 The helper runs `claude -p` with structured JSON output, writes Claude's raw output, classifies it with `validate_review_acceptance.py`, and exits:
 
@@ -93,7 +117,7 @@ To reuse a prebuilt prompt:
 ```bash
 python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
   --prompt-file /tmp/review-prompt.md \
-  --output review.out
+  --output review.structured.out
 ```
 
 The helper defaults are intentionally review-scoped and OAuth compatible:
@@ -125,6 +149,38 @@ claude -p \
   --disallowedTools Edit Write MultiEdit NotebookEdit \
   < review-prompt.md
 ```
+
+### Codex Review
+
+Run the structured Codex review and the official Codex `/review` or review command in parallel.
+
+For the structured path, use the same prompt skeleton and JSON schema as the Claude structured path. A non-interactive runtime may look like:
+
+```bash
+codex exec \
+  --output-schema /path/to/goal-checkpoint-runner/references/review_schema.json \
+  -o review.structured.out \
+  - < review-prompt.md
+```
+
+For the official path, invoke the active Codex runtime's official review entrypoint with the same context and save it separately, for example `review.official.out`.
+
+### SubAgents Review
+
+Run three independent host-provided reviewers in parallel:
+
+- Implementation reviewer
+- Verification reviewer
+- Scope reviewer
+
+Each reviewer receives only the goal, checkpoint statuses, changed files, publication evidence, verification evidence, user constraints, and this review contract. Do not pass the implementer's conclusion as ground truth. Save each raw output separately and normalize each result before merging.
+
+### Merge Rule
+
+- If any required reviewer reports concrete blocking findings, merged status is `CHANGES_REQUESTED`.
+- If a required reviewer is unavailable, times out, or returns ambiguous prose, merged status is `UNKNOWN` unless another required reviewer clearly returns `CHANGES_REQUESTED`.
+- Merged status is `ACCEPTED` only when all required reviewers for the selected gate are available and have no blocking findings.
+- Preserve raw reviewer outputs and the normalized merged JSON as CP-FINAL evidence.
 
 ## Classification Guidance
 

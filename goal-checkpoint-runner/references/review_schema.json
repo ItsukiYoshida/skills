@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ACCEPTED", "CHANGES_REQUESTED"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "checkpoint": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "required_fix": {
+            "type": "string"
+          }
+        },
+        "required": ["problem"]
+      }
+    }
+  },
+  "required": ["status", "findings"]
+}

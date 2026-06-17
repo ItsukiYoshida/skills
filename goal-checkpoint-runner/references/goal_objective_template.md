@@ -4,7 +4,9 @@ Use this template when creating a goal objective after planning or before cleari
 
 CP-PUBLISH is required before CP-FINAL unless the user explicitly opts out of commits or PR creation. It creates debt-unit Conventional Commit commits, pushes the branch, and opens a PR whose title is also Conventional Commit formatted. Use the separate `commit skills` skill as the source of truth for commit message and PR title type/scope decisions.
 
-CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must run the `run_claude_review.py` command in a shell. Resolve the helper path before writing the objective; do not leave `<skill-dir>` in the final goal. If the transcript shows only a spawned SubAgent, built-in `/review`, or prose review attempt, CP-FINAL has not been attempted.
+CP-FINAL is an execution checkpoint for the quality gate selected during planning. Before writing this objective, ask the user which gate to use with `AskUserQuestion` when available; otherwise ask the same choice in plain text. The allowed choices are `SubAgents Review`, `Codex Review`, and `Claude Review`. Do not silently switch gates after implementation starts.
+
+The objective must record the selected gate and the exact execution plan. When a gate contains multiple reviewers, run them in parallel when the host/runtime supports parallel execution; otherwise run every required reviewer before merging results and note that parallel execution was unavailable.
 
 ```markdown
 # Goal
@@ -14,6 +16,15 @@ CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must
 ## Source Plan
 
 <Paste or summarize the original plan. Keep exact user constraints and named files.>
+
+## Quality Gate Selection
+
+- Selected gate: <SubAgents Review | Codex Review | Claude Review>
+- Selection evidence: <AskUserQuestion result, or the user's plain-text choice>
+- Parallel execution plan:
+  - <reviewer path 1>
+  - <reviewer path 2, if required>
+- Merge rule: any blocking finding means CHANGES_REQUESTED; unavailable/ambiguous required reviewers mean UNKNOWN unless another reviewer clearly requests changes; only all-clear required reviewers can produce ACCEPTED.
 
 ## Checkpoints
 
@@ -40,24 +51,38 @@ CP-FINAL is an execution checkpoint, not a delegation checkpoint. The agent must
   - Evidence required: final git status, commit list, pushed branch, PR URL, PR title, and PR body path or summary
 - CP-FINAL: Acceptance review gate
   - Scope: all completed checkpoints, CP-PUBLISH, and their evidence
-  - Acceptance: stdout JSON from the verification command has `status == "ACCEPTED"`
-  - Verification (literal command to execute in the shell; do not paraphrase, delegate, or substitute):
+  - Acceptance: the merged quality gate result has `status == "ACCEPTED"`
+  - Verification for `Claude Review`:
     ```bash
     python3 $HOME/.codex/skills/goal-checkpoint-runner/scripts/run_claude_review.py \
       --goal-objective <objective.md> \
       --checkpoints <checkpoints.md> \
       --evidence <evidence.md> \
       --changed-files <changed-files.md> \
-      --output review.out
-    # Parse stdout JSON; the `status` field MUST be "ACCEPTED" to pass.
-    # Exit code mapping: 0 ACCEPTED, 1 CHANGES_REQUESTED, 2 unavailable/UNKNOWN.
+      --output review.structured.out
     ```
-  - Forbidden review paths (do NOT use any of these for CP-FINAL):
-    - Spawning internal sub-agents (e.g. Codex `Spawned` / sub-agent review).
-    - Built-in `/review` slash command unless the user explicitly asks for it.
-    - Self-review by the implementing agent without running the helper above.
-    - Treating a SubAgent timeout or missing response as a reviewer result.
-  - Evidence required: the exact command invoked, the stdout JSON object, and `review.out` / `<review.out>.prompt.md` paths.
+    In parallel, invoke Claude CLI's official review command and save its output:
+    ```bash
+    claude -p "/review pr#<number>" > review.official.out
+    ```
+    Use the PR number or PR URL from CP-PUBLISH evidence. Add concise review instructions to the prompt only when needed.
+  - Verification for `Codex Review`:
+    ```bash
+    codex exec \
+      --output-schema $HOME/.codex/skills/goal-checkpoint-runner/references/review_schema.json \
+      -o review.structured.out \
+      - < review-prompt.md
+    ```
+    In parallel, invoke the active Codex runtime's official `/review` or non-interactive review entrypoint with the same context. Save its output to `review.official.out`.
+  - Verification for `SubAgents Review`:
+    ```text
+    Spawn/request three independent reviewers in parallel:
+    - Implementation reviewer
+    - Verification reviewer
+    - Scope reviewer
+    ```
+  - Merge step: normalize every reviewer output into the contract in `references/review_gate.md`, then merge with the rule recorded in Quality Gate Selection.
+  - Evidence required: selected gate, exact reviewer commands/prompts, parallel execution evidence or sequential fallback note, raw reviewer output paths, normalized reviewer statuses, and merged review JSON.
 
 ## Completion Rules
 
@@ -76,7 +101,7 @@ Before clearing context, make sure the next turn can recover:
 - User constraints that should not be re-litigated.
 - Current status and evidence for each checkpoint.
 - Publication evidence: debt-unit commit list, pushed branch, PR URL, PR title, and PR body path or summary.
-- Exact `run_claude_review.py` command, stdout JSON, and review output paths.
+- Selected quality gate, exact reviewer commands/prompts, normalized reviewer statuses, merged review JSON, and raw output paths.
 - Any files intentionally left dirty or out of scope.
 
 If this data is too large for the goal objective, write a repo-local task file only when appropriate for the project, then reference that file path in the objective.
