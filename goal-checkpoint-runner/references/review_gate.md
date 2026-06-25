@@ -8,7 +8,7 @@ During planning, choose exactly one gate with `AskUserQuestion` when available:
 - `Codex Review`: structured Codex review plus the official Codex `/review` or review command run in parallel.
 - `Claude Review`: structured Claude review plus Claude CLI's official `/review` command run in parallel.
 
-The selected gate must be recorded in the goal objective before implementation starts.
+The selected gate must be recorded in the goal objective before implementation starts. Review gates never authorize PR merging: do not merge a PR, enable auto-merge, approve a merge queue entry, or perform an equivalent repository-host merge action, even if the user explicitly asks or grants permission.
 
 ## Machine Contract
 
@@ -55,8 +55,6 @@ Reviewer role for this invocation:
 - Verification reviewer
 - Scope reviewer
 
-Do not implement changes.
-
 Inputs:
 - Goal objective:
 - Checkpoints and statuses:
@@ -69,6 +67,10 @@ Inputs:
   - PR title:
   - PR body path or summary:
 - User constraints:
+
+Hard prohibition:
+- Do not implement changes.
+- Do not edit files, push commits, approve the PR, merge the PR, enable auto-merge, close the PR, or mutate the PR in any way.
 
 Review focus:
 - Does the implementation satisfy every checkpoint acceptance criterion?
@@ -84,7 +86,7 @@ Return only the required JSON object.
 
 ### Claude Review
 
-Run the structured Claude review and Claude CLI's official `/review` command in parallel.
+Run the structured Claude review and Claude CLI's official `/review` command in parallel. Both paths are review-only and must not mutate files or PR state.
 
 Use the bundled helper for the structured Claude path when possible:
 
@@ -99,7 +101,9 @@ python3 /path/to/goal-checkpoint-runner/scripts/run_claude_review.py \
 The official path should invoke Claude CLI's `/review` command against the published PR and save that output separately:
 
 ```bash
-claude -p "/review pr#<number>" > review.official.out
+claude -p "/review pr#<number>
+
+Review only. Do not edit files, push commits, approve the PR, merge the PR, enable auto-merge, close the PR, or mutate the PR in any way." > review.official.out
 ```
 
 Use the PR number or PR URL from CP-PUBLISH evidence. Add concise extra review instructions to the prompt only when needed.
@@ -152,7 +156,7 @@ claude -p \
 
 ### Codex Review
 
-Run the structured Codex review and the official Codex `/review` or review command in parallel.
+Run the structured Codex review and the official Codex `/review` or review command in parallel. Both paths are review-only and must not mutate files or PR state.
 
 For the structured path, use the same prompt skeleton and JSON schema as the Claude structured path. A non-interactive runtime may look like:
 
@@ -163,7 +167,7 @@ codex exec \
   - < review-prompt.md
 ```
 
-For the official path, invoke the active Codex runtime's official review entrypoint with the same context and save it separately, for example `review.official.out`.
+For the official path, invoke the active Codex runtime's official review entrypoint with the same context and save it separately, for example `review.official.out`. Include review-only instructions that forbid file edits, pushes, PR approval, PR merge, auto-merge, closing, or other PR mutation.
 
 ### SubAgents Review
 
@@ -173,14 +177,14 @@ Run three independent host-provided reviewers in parallel:
 - Verification reviewer
 - Scope reviewer
 
-Each reviewer receives only the goal, checkpoint statuses, changed files, publication evidence, verification evidence, user constraints, and this review contract. Do not pass the implementer's conclusion as ground truth. Save each raw output separately and normalize each result before merging.
+Each reviewer receives only the goal, checkpoint statuses, changed files, publication evidence, verification evidence, user constraints, and this review contract. Do not pass the implementer's conclusion as ground truth. Save each raw output separately and normalize each result before aggregation.
 
-### Merge Rule
+### Review Aggregation Rule
 
-- If any required reviewer reports concrete blocking findings, merged status is `CHANGES_REQUESTED`.
-- If a required reviewer is unavailable, times out, or returns ambiguous prose, merged status is `UNKNOWN` unless another required reviewer clearly returns `CHANGES_REQUESTED`.
-- Merged status is `ACCEPTED` only when all required reviewers for the selected gate are available and have no blocking findings.
-- Preserve raw reviewer outputs and the normalized merged JSON as CP-FINAL evidence.
+- If any required reviewer reports concrete blocking findings, aggregated status is `CHANGES_REQUESTED`.
+- If a required reviewer is unavailable, times out, or returns ambiguous prose, aggregated status is `UNKNOWN` unless another required reviewer clearly returns `CHANGES_REQUESTED`.
+- Aggregated status is `ACCEPTED` only when all required reviewers for the selected gate are available and have no blocking findings.
+- Preserve raw reviewer outputs and the normalized aggregated JSON as CP-FINAL evidence.
 
 ## Classification Guidance
 

@@ -4,7 +4,7 @@
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["ACCEPTED", "CHANGES_REQUESTED"]
+      "enum": ["ACCEPTED", "CHANGES_REQUESTED", "UNKNOWN"]
     },
     "summary": {
       "type": "string"

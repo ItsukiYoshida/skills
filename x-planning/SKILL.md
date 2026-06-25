@@ -114,6 +114,7 @@ Make the handoff explicit:
 
 - State that the `goal-checkpoint-runner` skill should convert the accepted plan into CP records, create or continue the goal, execute checkpoints, collect evidence, and run its CP-FINAL review gate.
 - Include any user constraints that affect checkpointing, such as commit boundaries, no-fallback policy, live-environment verification, or required docs/tests.
+- Include the `goal-checkpoint-runner` PR merge prohibition: implementation may commit, push, create or update a PR, and run review gates, but must never merge the PR or enable auto-merge, even if the user explicitly grants permission.
 - Do not preemptively create a goal from this skill unless the user has accepted the plan and explicitly wants to begin implementation.
 
 ## Output Shape

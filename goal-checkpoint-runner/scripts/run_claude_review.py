@@ -74,7 +74,9 @@ def _build_prompt(args: argparse.Namespace) -> str:
         "# Role",
         (
             "You are the final acceptance review gate for a checkpointed agent "
-            "goal. Review only; do not implement changes."
+            "goal. Review only; do not implement changes, push commits, approve "
+            "the PR, merge the PR, enable auto-merge, close the PR, or mutate "
+            "the PR in any way."
         ),
         "# Review Roles",
         "- Implementation reviewer: validate behavior against checkpoints.",
