@@ -1,4 +1,4 @@
 interface:
   display_name: "Commit"
-  short_description: "Validate commit and PR titles"
-  default_prompt: "Use $commit to write or validate a Conventional Commit message and matching PR title."
+  short_description: "Validate Conventional Commit headers and commit content"
+  default_prompt: "Use $commit to write or validate a Conventional Commit message, commit-content policy, and matching PR title."

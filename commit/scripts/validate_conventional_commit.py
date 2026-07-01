@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the allowed Conventional Commits subset for commit and PR titles."""
+"""Validate the allowed Conventional Commits subset and commit-content policy."""
 
 from __future__ import annotations
 
@@ -28,6 +28,8 @@ HEADER_RE = re.compile(
 FOOTER_START_RE = re.compile(
     r"^(?P<token>BREAKING CHANGE|BREAKING-CHANGE|[A-Za-z0-9-]+)(?P<sep>: | #)(?P<value>.+)$"
 )
+CO_AUTHOR_RE = re.compile(r"^Co-authored-by\s*:", re.IGNORECASE)
+COMPOUND_AND_RE = re.compile(r"\band\b", re.IGNORECASE)
 
 
 def validate_header(header: str) -> list[str]:
@@ -48,6 +50,26 @@ def validate_header(header: str) -> list[str]:
         errors.append("scope must be a non-empty noun when present")
 
     return errors
+
+
+def title_from_header(header: str) -> str | None:
+    match = HEADER_RE.match(header)
+    if not match:
+        return None
+    return match.group("title")
+
+
+def validate_title_content(header: str) -> list[str]:
+    title = title_from_header(header)
+    if title is None:
+        return []
+
+    if COMPOUND_AND_RE.search(title):
+        return [
+            "title must describe one debt-unit change; split 'X and Y' into separate commits"
+        ]
+
+    return []
 
 
 def find_footer_start(lines: list[str]) -> int | None:
@@ -89,7 +111,15 @@ def has_breaking_footer(lines: list[str]) -> bool:
     )
 
 
-def validate_message(message: str, *, title_only: bool) -> list[str]:
+def has_co_author(lines: list[str]) -> bool:
+    return any(CO_AUTHOR_RE.match(line) for line in lines)
+
+
+def has_body_or_footer(lines: list[str]) -> bool:
+    return any(line.strip() for line in lines[1:])
+
+
+def validate_message(message: str, *, title_only: bool, squash: bool) -> list[str]:
     errors: list[str] = []
     if message.endswith("\n"):
         message = message[:-1]
@@ -103,9 +133,20 @@ def validate_message(message: str, *, title_only: bool) -> list[str]:
 
     header = lines[0]
     errors.extend(validate_header(header))
+    errors.extend(validate_title_content(header))
 
     if len(lines) > 1 and lines[1] != "":
         errors.append("commit body or footers must start after one blank line")
+
+    if not title_only and not squash and has_body_or_footer(lines):
+        errors.append(
+            "individual commit messages must be title-only; put details in the PR or squash-commit body"
+        )
+
+    if not squash and has_co_author(lines):
+        errors.append(
+            "individual commit messages must not include Co-authored-by trailers"
+        )
 
     if not title_only:
         errors.extend(validate_footers(lines[2:] if len(lines) > 2 else []))
@@ -136,13 +177,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="validate a single-line PR title or squash-merge title",
     )
+    parser.add_argument(
+        "--squash",
+        action="store_true",
+        help="validate a squash-commit message where a body or footers are acceptable",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     message = args.file.read_text() if args.file else args.message
-    errors = validate_message(message, title_only=args.title_only)
+    errors = validate_message(message, title_only=args.title_only, squash=args.squash)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
